@@ -5,16 +5,16 @@ BASE_URL = "https://api.econbiz.de/v1/search"
 DEFAULT_SIZE = 10
 
 
-def main():
-    query = input("Enter search term: ")
+def main(query, from_result = 1, size = DEFAULT_SIZE ):
     print(f"Searching for: {query}")
+    print(f"From position: {from_result}, Size: {size}")
   
 
     params = { 
         "q": query,
         "ff": 'source:"econstor"', 
-        "from": 1,
-        "size": DEFAULT_SIZE }
+        "from": from_result,
+        "size": size }
 
     print("Making API request")
     response = requests.get(BASE_URL, params=params)
