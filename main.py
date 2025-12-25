@@ -1,5 +1,5 @@
-from pathlib import Path
-
+import asyncio
+from pathlib import Path 
 from models import EconBizResponse
 from api import search
 from utils import (load_saved_responses, list_saved_responses, download_pdfs_batch, format_paper_info)
@@ -15,7 +15,7 @@ def display_search_results(response: EconBizResponse) -> None:
         print(f"\n[{i}] {format_paper_info(paper)}")
 
 
-def handle_search_mode() -> None:
+async def handle_search_mode() -> None:
     query = input("\nEnter search query: ").strip()
 
     if not query: 
@@ -28,7 +28,7 @@ def handle_search_mode() -> None:
     save_input = input("Save response? (y/n, default y): ").strip().lower()
     save = save_input != 'n'
 
-    response = search(query=query, size=size, save_response=save)
+    response = await search(query=query, size=size, save_response=save)
 
     if response: 
         display_search_results(response)
@@ -37,15 +37,21 @@ def handle_search_mode() -> None:
         if pdf_urls:
             download = input(f"\nDownload {len(pdf_urls)} PDFs? (y/n): ").strip().lower()
 
-            if download == y: 
-                results.download_pdfs_batch(pdf_urls)
+            if download == 'y': 
+                results = await download_pdfs_batch(pdf_urls)
+
+                # Display results 
+                print("\nDownload results:")
+                print(f"  Successful downloads: {len(results['successful'])}")
+                print(f"  Failed downloads: {len(results['failed'])}")
+
     else:
         print("\nSearch failed")
 
 
-def handle_load_mode() -> None:
+async def handle_load_mode() -> None:
     saved_dir = Path("saved_responses")
-    saved_files = list_saved_responses(saved_dir) #uses util func to get saved files
+    saved_files = list_saved_responses(saved_dir) # Synchronous function 
 
     if not saved_files:
         print("\nNo saved responses")
@@ -53,24 +59,33 @@ def handle_load_mode() -> None:
 
     print(f"\nFound {len(saved_files)} saved files:")
 
+    # Load metadata for each saved file
     for i, filepath in enumerate(saved_files, 1):
         try:
-            r = load_saved_responses(filepath) #load to get metadata
-            print(f"[{i}] {r.query} - {r.timestamp}")
+            r = await load_saved_responses(filepath)
+            if r:
+                print(f"[{i}] {r.query} - {r.timestamp}")
+            else:
+                print(f"[{i}] Error loading: {filepath.name}")
 
         except Exception as e:
-            print(f"[{i}] Error loading: {filepath.name}")
+            print(f"[{i}] Error loading: {filepath.name} - {e}")
 
     selection = input("\nSelect (or Enter for latest): ").strip()
 
     try:
         if selection == "":
-            index = -1 #most recent 
+            index = -1  
         else:
             index = int(selection) - 1
 
         selected_file = saved_files[index]
-        loaded = load_saved_responses(selected_file)
+
+        loaded = await load_saved_responses(selected_file)
+
+        if not loaded:
+            print("Failed to load selected response")
+            return 
 
         print(f"\nLoaded successfully!")
         print(f"   Query: '{loaded.query}'")
@@ -86,8 +101,14 @@ def handle_load_mode() -> None:
         if pdf_urls:
             download = input(f"\nDownload {len(pdf_urls)} PDF(s)? (y/n): ").strip().lower()
 
-        if download == 'y':
-            results = download_pdfs_batch(pdf_urls)
+            if download == 'y':
+                results = await download_pdfs_batch(pdf_urls)
+
+                # Display results 
+                print("\nDownload results:")
+                print(f"  Successful downloads: {len(results['successful'])}")
+                print(f"  Failed downloads: {len(results['failed'])}")
+
 
     except ValueError:
         print("Invalid input. Please enter a number.")
@@ -95,7 +116,7 @@ def handle_load_mode() -> None:
         print(f"Error: {e}")
 
 
-def main() -> None:
+async def main() -> None:
 
     print("\n" + "=" * 70)
     print("ECONBIZ RESEARCH PAPER SEARCH TOOL")
@@ -110,14 +131,14 @@ def main() -> None:
     
     # Route to appropriate handler
     if choice == "1":
-        handle_search_mode()
+        await handle_search_mode()
     elif choice == "2":
-        handle_load_mode()
+        await handle_load_mode()
     else:
         print("\nInvalid choice. Please enter 1 or 2.")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
 
 
