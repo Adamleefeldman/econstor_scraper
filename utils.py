@@ -1,11 +1,20 @@
-import requests
+import httpx
+import aiofiles
+import asyncio
 from pathlib import Path
 from typing import List, Optional
 from models import EconBizResponse
 
-def load_saved_responses(filepath: Path) -> EconBizResponse:
-    return EconBizResponse.load(filepath)
-
+async def load_saved_responses(filepath: Path) -> Optional[EconBizResponse]:
+    
+    try:
+        return await EconBizResponse.load(filepath)
+    except FileNotFoundError:
+        print(f"File not found: {filepath}")
+        return None
+    except Exception as e: 
+        print(f"Error loading response from {filepath}: {e}")
+        return None 
 
 def list_saved_responses(directory: Path = Path("saved_responses")) -> List[Path]:
 
@@ -16,50 +25,66 @@ def list_saved_responses(directory: Path = Path("saved_responses")) -> List[Path
     return sorted(saved_files)
 
 
-def download_pdf(url: str, filename: str, timeout: int = 30) -> bool:
+async def download_pdf(url: str, filename: str, timeout: int = 30) -> bool:
 
     try: 
-        response = requests.get(url, timeout=timeout)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url, stream=True)
+            response.raise_for_status()
 
-        if response.status_code == 200:
-            binary_data = response.content 
-
-            with open(filename, "wb") as f: 
-                f.write(binary_data)
-
+            # Write file asynchronously
+            async with aiofiles.open(filename, "wb") as f:
+                await f.write(response.content)
             return True
 
-        else: 
-            print(f"Failed to download: HTTP {response.status_code}")
-            return False
-
-    except requests.exceptions.Timeout:
+    except httpx.TimeoutException:
         print(f"Error downloading {url}: Timeout after {timeout}s")
         return False
-    except requests.exceptions.ConnectionError:
+    except httpx.ConnectError:
         print(f"Error downloading {url}: Connection error")
+        return False
+    except httpx.HTTPStatusError as e:
+        print(f"Error downloading {url}: HTTP {e.response.status_code}")
         return False
     except Exception as e:
         print(f"Error downloading {url}: {e}")
         return False
 
-def download_pdfs_batch(pdf_urls: List[tuple], output_dir: Path = Path(".")) -> dict:
+async def download_pdfs_batch(pdf_urls: List[tuple], output_dir: Path = Path(".")) -> dict:
     output_dir.mkdir(parents = True, exist_ok = True)
+
+    """
+        Download multiple PDFs concurrently
+        
+        Args:
+            pdf_urls: List of tuples containing (paper_id, pdf_url)
+            output_dir: Directory to save downloaded PDFs
+            
+        Returns: 
+                Dict with 'successful' 'failed' paper IDs
+    """
 
     results = {'successful': [], 'failed': []}
 
     print(f"\nDownloading {len(pdf_urls)} PDFs...")
-
-    for i, (paper_id, url) in enumerate(pdf_urls, 1):
+    
+    tasks = []
+    for paper_id, url in pdf_urls:
         filename = output_dir / f"{paper_id}.pdf"
+        task = download_pdf(url, str(filename)) # Create the async download task 
+        tasks.append((paper_id, url, filename, task))
 
-        success = download_pdf(url, str(filename))
+    download_results = await asyncio.gather(*[task for _, _, _, task in tasks], return_exceptions=True)
 
-        if success:
-            print(f"Saved as {filename}")
+    for (paper_id, url, filename, _), success in zip(tasks, download_results):
+        if isinstance(success, Exception):
+            print(f"Failed to download {paper_id}: {success}")
+            results['failed'].append(paper_id)
+        elif success:
+            print(f"Saved {paper_id} as {filename}")
             results['successful'].append(paper_id)
         else:
-            print(f"Failed")
+            print(f"Failed to download {paper_id}")
             results['failed'].append(paper_id)
 
     print(f"Download Summary:")
@@ -79,7 +104,7 @@ def format_paper_info(paper) -> str:
     if paper.creator_name:
         authors = ', '.join(paper.creator_name[:3])
         if len(paper.creator_name) > 3:
-            authors += f" (and {len(paper.creator_name) - 3} more"
+            authors += f" (and {len(paper.creator_name) - 3} more)"
         lines.append(f"Authors: {authors}")
 
     if paper.date:
@@ -93,8 +118,8 @@ def format_paper_info(paper) -> str:
         lines.append(f"PDF: Not Available")
 
     if paper.subject:
-        subjects = ', '>join(paper.subject[:3])
-        if len(paper.subjects) > 3:
+        subjects = ', '.join(paper.subject[:3])
+        if len(paper.subject) > 3:
             subjects += "..."
         lines.append(f"Subjects: {subjects}")
 
