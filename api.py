@@ -4,14 +4,17 @@ from pathlib import Path
 from typing import Optional
 
 from models import Paper, EconBizResponse, SearchHits
+import logging 
+
+logger = logging.getLogger(__name__)
 
 
 BASE_URL = "https://api.econbiz.de/v1/search"
 DEFAULT_SIZE = 10
 
 async def search(query: str, highlight: bool =True, sort: str ="date desc",  from_result: int=1, size: int=DEFAULT_SIZE, facets: str="language person subject type_genre isPartOf", save_response: bool=True) -> Optional[EconBizResponse]:
-    print(f"Searching for: {query}")
-    print(f"From position: {from_result}, Size: {size}")
+    logger.info(f"Searching for: {query}")
+    logger.info(f"From position: {from_result}, Size: {size}")
   
     params = {
         "q": query,
@@ -23,17 +26,17 @@ async def search(query: str, highlight: bool =True, sort: str ="date desc",  fro
         "facets": facets
         }
 
-    print("Making API request")
+    logger.info("Making API request")
 
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(BASE_URL, params = params, timeout = 30)
             response.raise_for_status()
         except httpx.RequestError as e:
-            print(f"Error making API request: {e}")
+            logger.error(f"Error making API request: {e}")
             return None
         except httpx.HTTPStatusError as e:
-            print(f"HTTP error occured: {e}")
+            logger.error(f"HTTP error occured: {e}")
             return None
     
         raw_data = response.json()
@@ -54,17 +57,17 @@ async def search(query: str, highlight: bool =True, sort: str ="date desc",  fro
         papers = econbiz_response.get_papers()
         pdf_urls = econbiz_response.get_pdf_urls()
 
-        print(f"Found {econbiz_response.hits.total} total results")
-        print(f"Retrieved {len(papers)} papers")
-        print(f"Found {len(pdf_urls)} PDFs:")
+        logger.info(f"Found {econbiz_response.hits.total} total results")
+        logger.info(f"Retrieved {len(papers)} papers")
+        logger.info(f"Found {len(pdf_urls)} PDFs:")
 
         for paper_id, url in pdf_urls:
-            print(f" {paper_id}, {url}")
+            logger.info(f" {paper_id}, {url}")
 
         return econbiz_response
 
     except Exception as e:
-        print(f"Error processing response data: {e}")
+        logger.error(f"Error processing response data: {e}")
         return None  
 
 
@@ -78,4 +81,4 @@ async def _save_response(response: EconBizResponse, query: str)-> None:
 
     # Await the async method from EconBizResponse 
     await response.save(filepath)
-    print(f"Response saved to: {filepath}")     
+    logger.info(f"Response saved to: {filepath}")     

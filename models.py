@@ -1,13 +1,13 @@
 import aiofiles 
 from pydantic import BaseModel, Field 
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 from datetime import datetime
 from pathlib import Path 
  
  
 class Paper(BaseModel):  # individual paper
     id: str 
-    title: Optional[List[str]] = None 
+    title: Optional[Union[List[str], str]] = None 
     creator_name: Optional[List[str]] = None
     identifier_url: Optional[List[str]] = None
     date: Optional[List[str]] = None

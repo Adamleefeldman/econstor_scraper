@@ -1,19 +1,22 @@
 import httpx
 import aiofiles
-import asyncio
+import asyncio 
 from pathlib import Path
 from typing import List, Optional
 from models import EconBizResponse
+import logging 
+
+logger = logging.getLogger(__name__)
 
 async def load_saved_responses(filepath: Path) -> Optional[EconBizResponse]:
     
     try:
         return await EconBizResponse.load(filepath)
     except FileNotFoundError:
-        print(f"File not found: {filepath}")
+        logger.error(f"File not found: {filepath}")
         return None
     except Exception as e: 
-        print(f"Error loading response from {filepath}: {e}")
+        logger.error(f"Error loading response from {filepath}: {e}")
         return None 
 
 def list_saved_responses(directory: Path = Path("saved_responses")) -> List[Path]:
@@ -38,16 +41,16 @@ async def download_pdf(url: str, filename: str, timeout: int = 30) -> bool:
             return True
 
     except httpx.TimeoutException:
-        print(f"Error downloading {url}: Timeout after {timeout}s")
+        logger.error(f"Error downloading {url}: Timeout after {timeout}s")
         return False
     except httpx.ConnectError:
-        print(f"Error downloading {url}: Connection error")
+        logger.error(f"Error downloading {url}: Connection error")
         return False
     except httpx.HTTPStatusError as e:
-        print(f"Error downloading {url}: HTTP {e.response.status_code}")
+        logger.error(f"Error downloading {url}: HTTP {e.response.status_code}")
         return False
     except Exception as e:
-        print(f"Error downloading {url}: {e}")
+        logger.error(f"Error downloading {url}: {e}")
         return False
 
 async def download_pdfs_batch(pdf_urls: List[tuple], output_dir: Path = Path(".")) -> dict:
@@ -66,7 +69,7 @@ async def download_pdfs_batch(pdf_urls: List[tuple], output_dir: Path = Path("."
 
     results = {'successful': [], 'failed': []}
 
-    print(f"\nDownloading {len(pdf_urls)} PDFs...")
+    logger.info(f"Downloading {len(pdf_urls)} PDFs...")
     
     tasks = []
     for paper_id, url in pdf_urls:
@@ -78,18 +81,18 @@ async def download_pdfs_batch(pdf_urls: List[tuple], output_dir: Path = Path("."
 
     for (paper_id, url, filename, _), success in zip(tasks, download_results):
         if isinstance(success, Exception):
-            print(f"Failed to download {paper_id}: {success}")
+            logger.warning(f"Failed to download {paper_id}: {success}")
             results['failed'].append(paper_id)
         elif success:
-            print(f"Saved {paper_id} as {filename}")
+            logger.debug(f"Saved {paper_id} as {filename}")
             results['successful'].append(paper_id)
         else:
-            print(f"Failed to download {paper_id}")
+            logger.warning(f"Failed to download {paper_id}")
             results['failed'].append(paper_id)
 
-    print(f"Download Summary:")
-    print(f"Successful: {len(results['successful'])}")
-    print(f"Failed: {len(results['failed'])}")
+    logger.info(f"Download Summary:")
+    logger.info(f"Successful: {len(results['successful'])}")
+    logger.info(f"Failed: {len(results['failed'])}")
 
     return results
 
