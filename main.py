@@ -5,6 +5,7 @@ from models import EconBizResponse
 from api import search
 from utils import (load_saved_responses, list_saved_responses, download_pdfs_batch, format_paper_info)
 
+
 logging.basicConfig(level=logging.INFO, format = '%(asctime)s - %(levelname)s - %(message)s', handlers = [
     logging.FileHandler("econstor_scraper.log"),
     logging.StreamHandler()

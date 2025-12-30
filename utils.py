@@ -99,6 +99,8 @@ async def download_pdfs_batch(pdf_urls: List[tuple], output_dir: Path = Path("."
 
 def format_paper_info(paper) -> str:
 
+    """ Format paper object info for user """
+
     lines = [f"Paper ID: {paper.id}"]
 
     if paper.title:
