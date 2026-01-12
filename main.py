@@ -1,25 +1,57 @@
-from pathlib import Path
-
+import asyncio
+import logging
+from pathlib import Path 
 from models import EconBizResponse
 from api import search
 from utils import (load_saved_responses, list_saved_responses, download_pdfs_batch, format_paper_info)
 
 
+logging.basicConfig(level=logging.INFO, format = '%(asctime)s - %(levelname)s - %(message)s', handlers = [
+    logging.FileHandler("econstor_scraper.log"),
+    logging.StreamHandler()
+])
+logger = logging.getLogger(__name__)
+
+
 def display_search_results(response: EconBizResponse) -> None: 
+
+    """Displays search results in correctly formatted way"""
+
     papers = response.get_papers()
 
-    print(f"Successfully retrieved {len(papers)} papers")
-    print(f"Total results available: {response.hits.total}")
+    logger.info(f"Successfully retrieved {len(papers)} papers")
+    logger.info(f"Total results available: {response.hits.total}")
 
     for i, paper in enumerate(papers, 1):
-        print(f"\n[{i}] {format_paper_info(paper)}")
+        logger.info(f"[{i}] {format_paper_info(paper)}")
 
 
-def handle_search_mode() -> None:
+async def offer_pdf_download(pdf_urls) -> None:
+
+    """ Facilitates PDF download process """
+
+    if not pdf_urls:
+        return
+    
+    download = input(f"\nDownload {len(pdf_urls)} PDF(s)? (y/n): ").strip().lower()
+
+    if download == 'y':
+        results = await download_pdfs_batch(pdf_urls)
+
+        # Display results 
+        logger.info("Download results:")
+        logger.info(f"  Successful downloads: {len(results['successful'])}")
+        logger.info(f"  Failed downloads: {len(results['failed'])}")
+
+
+async def handle_search_mode() -> None:
+
+    """Handles online search mode, makes API call to EconBiz"""
+
     query = input("\nEnter search query: ").strip()
 
     if not query: 
-        print(f"Query cannot be empty ")
+        logger.info("Query cannot be empty ")
         return 
 
     size_input = input("Number of papers (default 10): ").strip()
@@ -28,96 +60,109 @@ def handle_search_mode() -> None:
     save_input = input("Save response? (y/n, default y): ").strip().lower()
     save = save_input != 'n'
 
-    response = search(query=query, size=size, save_response=save)
+    response = await search(query=query, size=size, save_response=save)
 
     if response: 
         display_search_results(response)
 
         pdf_urls = response.get_pdf_urls()
-        if pdf_urls:
-            download = input(f"\nDownload {len(pdf_urls)} PDFs? (y/n): ").strip().lower()
+        await offer_pdf_download(pdf_urls)
 
-            if download == y: 
-                results.download_pdfs_batch(pdf_urls)
     else:
-        print("\nSearch failed")
+        logger.error("Search failed")
 
 
-def handle_load_mode() -> None:
+async def handle_load_mode() -> None:
+
+    """ Facilitates offline loading mode - loads saved responses from disk """
+
     saved_dir = Path("saved_responses")
-    saved_files = list_saved_responses(saved_dir) #uses util func to get saved files
+    saved_files = list_saved_responses(saved_dir) # Synchronous function 
 
     if not saved_files:
-        print("\nNo saved responses")
+        logger.info("No saved responses")
         return 
 
-    print(f"\nFound {len(saved_files)} saved files:")
+    logger.info(f"Found {len(saved_files)} saved files:")
 
+    # Load metadata for each saved file
     for i, filepath in enumerate(saved_files, 1):
         try:
-            r = load_saved_responses(filepath) #load to get metadata
-            print(f"[{i}] {r.query} - {r.timestamp}")
+            r = await load_saved_responses(filepath)
+            if r:
+                logger.info(f"[{i}] {r.query} - {r.timestamp}")
+            else:
+                logger.info(f"[{i}] Error loading: {filepath.name}")
 
         except Exception as e:
-            print(f"[{i}] Error loading: {filepath.name}")
+            logger.error(f"[{i}] Error loading: {filepath.name} - {e}")
 
     selection = input("\nSelect (or Enter for latest): ").strip()
 
     try:
         if selection == "":
-            index = -1 #most recent 
+            index = -1  
         else:
             index = int(selection) - 1
 
         selected_file = saved_files[index]
-        loaded = load_saved_responses(selected_file)
 
-        print(f"\nLoaded successfully!")
-        print(f"   Query: '{loaded.query}'")
-        print(f"   Saved: {loaded.timestamp}")
-        print(f"   Papers: {len(loaded.get_papers())}")
+        loaded = await load_saved_responses(selected_file)
+
+        if not loaded:
+            logger.info("Failed to load selected response")
+            return 
+
+        logger.info(f"Loaded successfully!")
+        logger.info(f"   Query: '{loaded.query}'")
+        logger.info(f"   Saved: {loaded.timestamp}")
+        logger.info(f"   Papers: {len(loaded.get_papers())}")
 
 
         for i, paper in enumerate(loaded.get_papers(), 1):
-            print(f"\n[{i}] {format_paper_info(paper)}")
+            logger.info(f"[{i}] {format_paper_info(paper)}")
 
         #PDF download
         pdf_urls = loaded.get_pdf_urls()
-        if pdf_urls:
-            download = input(f"\nDownload {len(pdf_urls)} PDF(s)? (y/n): ").strip().lower()
+        await offer_pdf_download(pdf_urls)
 
-        if download == 'y':
-            results = download_pdfs_batch(pdf_urls)
 
     except ValueError:
-        print("Invalid input. Please enter a number.")
+        logger.info("Invalid input. Please enter a number.")
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
 
 
-def main() -> None:
+async def main() -> None:
 
-    print("\n" + "=" * 70)
-    print("ECONBIZ RESEARCH PAPER SEARCH TOOL")
-    print("=" * 70)
+    logger.info("-" * 70)
+    logger.info("ECONBIZ RESEARCH PAPER SEARCH TOOL")
+    logger.info("-" * 70)
+
+    while True:
+        
+        # Show menu
+        logger.info("What would you like to do?")
+        logger.info("[1] Search EconBiz (makes API call)")
+        logger.info("[2] Load saved response (no API call, works offline)")
     
-    # Show menu
-    print("\nWhat would you like to do?")
-    print("[1] Search EconBiz (makes API call)")
-    print("[2] Load saved response (no API call, works offline)")
-    
-    choice = input("\nEnter 1 or 2: ").strip()
-    
-    # Route to appropriate handler
-    if choice == "1":
-        handle_search_mode()
-    elif choice == "2":
-        handle_load_mode()
-    else:
-        print("\nInvalid choice. Please enter 1 or 2.")
+        choice = input("\nEnter 1 or 2 (or 'q' to quit): ").strip()
+        
+        # Route to appropriate handler
+        if choice == "1":
+            await handle_search_mode()
+        elif choice == "2":
+            await handle_load_mode()
+        elif choice == "q":
+            logger.info("Thank you for using our tool. Goodbye")
+            break
+        else:
+            logger.info("Invalid choice. Please enter 1, 2 or q.")
+
+    logger.info("Program terminated successfully")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
 
 

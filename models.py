@@ -1,11 +1,13 @@
+import aiofiles 
 from pydantic import BaseModel, Field 
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 from datetime import datetime
 from pathlib import Path 
-
+ 
+ 
 class Paper(BaseModel):  # individual paper
     id: str 
-    title: Optional[List[str]] = None 
+    title: Optional[Union[List[str], str]] = None 
     creator_name: Optional[List[str]] = None
     identifier_url: Optional[List[str]] = None
     date: Optional[List[str]] = None
@@ -51,11 +53,14 @@ class EconBizResponse(BaseModel): # complete API response
         return results
 
     
-    def save(self, filepath: Path) -> None:
+    async def save(self, filepath: Path) -> None:
         filepath.parent.mkdir(parents = True, exist_ok = True)
-        filepath.write_text(self.model_dump_json(indent=2))
+        async with aiofiles.open(filepath, 'w', encoding = 'utf-8') as f:
+            await f.write(self.model_dump_json(indent = 2))
 
 
     @classmethod
-    def load(cls, filepath: Path) -> 'EconBizResponse':
-        return cls.model_validate_json(filepath.read_text())
+    async def load(cls, filepath: Path) -> 'EconBizResponse':
+        async with aiofiles.open(filepath, 'r', encoding = 'utf-8') as f:
+            content = await f.read()
+        return cls.model_validate_json(content)
